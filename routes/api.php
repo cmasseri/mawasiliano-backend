@@ -304,6 +304,30 @@ Route::middleware('auth:sanctum')->group(function () {
         [ReportController::class, 'rankDistribution']
     );
 
-   
+   Route::get('/dashboard/reports', [ReportController::class, 'dashboard']);
+
+
+   Route::get(
+    '/reports/trade-distribution',
+    [ReportController::class, 'tradeDistribution']
+);
+Route::get('/reports/appointment-distribution', [ReportController::class, 'appointmentDistribution']);
+
+
+Route::get(
+    '/reports/gender-distribution',
+    [ReportController::class, 'genderDistribution']
+);
+
+
+
+
+
+
+
 });
+
+
+
+
 

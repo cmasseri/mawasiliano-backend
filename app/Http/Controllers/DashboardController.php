@@ -102,7 +102,7 @@ public function personnelByUnit()
 public function recentActivities()
 {
     $transfers = Transfer::latest()
-        ->take(5)
+        ->take(2)
         ->get()
         ->map(function ($item) {
 

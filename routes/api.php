@@ -93,7 +93,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get(
         '/personnel-search/search',
-        [PersonnelController::class, 'search']
+        [PersonnelController::class, 'searchPersonnel']
     );
 
     /*
@@ -322,10 +322,35 @@ Route::get(
 
 
 
+Route::get(
+    '/reports/education-fields',
+    [ReportController::class, 'educationFields']
+);
 
+Route::get(
+    '/reports/personnel-by-education',
+    [ReportController::class, 'personnelByEducation']
+);
 
 
 });
+
+
+
+Route::get(
+    '/personnel/{id}/retirement',
+    [PersonnelController::class,'retirementInformation']
+);
+
+
+
+
+
+
+
+
+
+
 
 
 

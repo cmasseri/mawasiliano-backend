@@ -80,4 +80,15 @@ public function trainings()
 {
     return $this->hasMany(PersonnelTraining::class);
 }
+
+public function retirementExtensions()
+{
+    return $this->hasMany(RetirementExtension::class);
+}
+
+public function activeRetirementExtension()
+{
+    return $this->hasOne(RetirementExtension::class)
+                ->where('is_active', true);
+}
 }

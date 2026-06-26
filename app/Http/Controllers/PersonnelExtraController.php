@@ -8,440 +8,681 @@ use Illuminate\Support\Facades\DB;
 class PersonnelExtraController extends Controller
 {
 
-    // =========================
-    // 🔹 GET DATA
-    // =========================
+    // ==========================================
+    // TRADES
+    // ==========================================
 
-public function trades($id)
-{
-    return DB::table('personnel_trades')
+    public function trades($id)
+    {
+        return DB::table('personnel_trades')
 
-        ->join(
-            'trades',
-            'personnel_trades.trade_id',
-            '=',
-            'trades.id'
-        )
+            ->join(
+                'trades',
+                'personnel_trades.trade_id',
+                '=',
+                'trades.id'
+            )
 
-        ->select(
+            ->select(
 
-            'personnel_trades.id',
+                'personnel_trades.id',
 
-            'personnel_trades.personnel_id',
+                'personnel_trades.personnel_id',
 
-            'personnel_trades.trade_id',
+                'personnel_trades.trade_id',
 
-            'personnel_trades.start_date',
+                'personnel_trades.start_date',
 
-            'personnel_trades.end_date',
+                'personnel_trades.end_date',
 
-            'personnel_trades.is_current',
+                'personnel_trades.is_current',
 
-            'trades.name as trade_name'
-        )
+                'trades.name as trade_name'
 
-        ->where(
-            'personnel_trades.personnel_id',
-            $id
-        )
+            )
 
-        ->orderByDesc(
-            'personnel_trades.is_current'
-        )
+            ->where(
+                'personnel_trades.personnel_id',
+                $id
+            )
 
-        ->orderByDesc(
-            'personnel_trades.start_date'
-        )
+            ->orderByDesc(
+                'personnel_trades.is_current'
+            )
 
-        ->get();
-}
+            ->orderByDesc(
+                'personnel_trades.start_date'
+            )
+
+            ->get();
+    }
+
+    // ==========================================
+    // EDUCATION
+    // ==========================================
 
     public function education($id)
     {
         return DB::table('personnel_education')
-            ->where('personnel_id', $id)
+
+            ->where(
+                'personnel_id',
+                $id
+            )
+
+            ->orderByDesc('year_completion')
+
             ->get();
     }
+
+    // ==========================================
+    // OPERATIONS
+    // ==========================================
 
     public function operations($id)
     {
         return DB::table('personnel_operations')
-            ->where('personnel_id', $id)
+
+            ->where(
+                'personnel_id',
+                $id
+            )
+
+            ->orderByDesc('start_date')
+
             ->get();
     }
 
-  public function trainings($id)
+    // ==========================================
+    // TRAININGS
+    // ==========================================
+
+    public function trainings($id)
     {
-        return DB::table('personnel_trainings') 
-            ->where('personnel_id', $id)
+        return DB::table('personnel_trainings')
+
+            ->join(
+                'trainings',
+                'personnel_trainings.training_id',
+                '=',
+                'trainings.id'
+            )
+
+            ->select(
+
+                'personnel_trainings.*',
+
+                'trainings.name',
+
+                'trainings.category'
+
+            )
+
+            ->where(
+                'personnel_trainings.personnel_id',
+                $id
+            )
+
+            ->orderByDesc(
+                'personnel_trainings.end_date'
+            )
+
             ->get();
     }
 
-
-    // =========================
-    // 🔹 STORE
-    // =========================
+        // ==========================================
+    // STORE TRADE
+    // ==========================================
 
     public function storeTrade(Request $request)
     {
         $data = $request->validate([
+
             'personnel_id' => 'required|integer',
-            'trade_name'   => 'required|string',
+
+            'trade_id'     => 'required|exists:trades,id',
+
+            'start_date'   => 'nullable|date',
+
+            'end_date'     => 'nullable|date'
+
         ]);
 
-        return DB::table('personnel_trades')->insertGetId([
-            'personnel_id' => $data['personnel_id'],
-            'trade_name'   => $data['trade_name'],
-            'created_at'   => now(),
-            'updated_at'   => now(),
-        ]);
-    }
+        DB::table('personnel_trades')
 
-public function storeEducation(Request $request)
-{
-    \Log::info('EDUCATION REQUEST', [ 'data' => $request->all() ]);
+            ->where('personnel_id', $data['personnel_id'])
 
-    try {
-        $data = $request->validate([
-            'personnel_id'    => 'required|integer',
-            'name'            => 'required|string',
-            'institution'     => 'nullable|string',
-            'year_completion' => 'nullable'
-        ]);
+            ->where('is_current', 1)
 
-        $id = DB::table('personnel_education')
-            ->insertGetId([
+            ->update([
 
-                'personnel_id'    => $data['personnel_id'],
-                'name'            => $data['name'],
-                'institution'     =>
-                    $data['institution'] ?? null,
-                'year_completion' =>
-                    $data['year_completion'] ?? null,
-                'created_at'      => now(),
-                'updated_at'      => now()
+                'is_current' => 0,
+
+                'updated_at' => now()
+
             ]);
 
-        \Log::info('EDUCATION SAVED', [
+        $id = DB::table('personnel_trades')
+
+            ->insertGetId([
+
+                'personnel_id' => $data['personnel_id'],
+
+                'trade_id'     => $data['trade_id'],
+
+                'start_date'   => $data['start_date'] ?? now(),
+
+                'end_date'     => $data['end_date'] ?? null,
+
+                'is_current'   => 1,
+
+                'created_at'   => now(),
+
+                'updated_at'   => now()
+
+            ]);
+
+        return response()->json([
+
+            'message' => 'Trade added successfully',
+
             'id' => $id
-        ]);
 
-        return response()->json([
-            'message' => 'Education saved successfully',
-            'id'      => $id
         ]);
-
-    } catch (\Exception $e) {
-        \Log::error('EDUCATION STORE ERROR', [
-            'message' => $e->getMessage(),
-            'data' => $request->all()
-        ]);
-
-        return response()->json([
-            'message' => $e->getMessage()
-        ], 500);
     }
-}
+
+    // ==========================================
+    // STORE EDUCATION
+    // ==========================================
+
+    public function storeEducation(Request $request)
+    {
+        try {
+
+            $data = $request->validate([
+
+                'personnel_id'    => 'required|integer',
+
+                'qualification'   => 'required|string',
+
+                'field_of_study'  => 'nullable|string',
+
+                'institution'     => 'nullable|string',
+
+                'year_completion' => 'nullable|integer|min:1900|max:2100'
+
+            ]);
+
+            $id = DB::table('personnel_education')
+
+                ->insertGetId([
+
+                    'personnel_id'    => $data['personnel_id'],
+
+                    'qualification'   => $data['qualification'],
+
+                    'field_of_study'  => $data['field_of_study'] ?? null,
+
+                    'institution'     => $data['institution'] ?? null,
+
+                    'year_completion' => $data['year_completion'] ?? null,
+
+                    'created_at'      => now(),
+
+                    'updated_at'      => now()
+
+                ]);
+
+            return response()->json([
+
+                'message' => 'Education saved successfully',
+
+                'id' => $id
+
+            ]);
+
+        } catch (\Exception $e) {
+
+            return response()->json([
+
+                'message' => $e->getMessage()
+
+            ], 500);
+
+        }
+    }
+
+        // ==========================================
+    // STORE OPERATION
+    // ==========================================
 
     public function storeOperation(Request $request)
     {
         $data = $request->validate([
+
             'personnel_id'   => 'required|integer',
+
             'operation_name' => 'required|string',
+
             'start_date'     => 'nullable|date',
+
             'end_date'       => 'nullable|date',
+
         ]);
 
-        return DB::table('personnel_operations')->insertGetId([
-            'personnel_id'   => $data['personnel_id'],
-            'operation_name' => $data['operation_name'],
-            'start_date'     => $data['start_date'] ?? null,
-            'end_date'       => $data['end_date'] ?? null,
-            'created_at'     => now(),
-            'updated_at'     => now(),
-        ]);
-    }
+        $id = DB::table('personnel_operations')
 
-public function storeTraining(Request $request)
-{
-    $data = $request->validate([
-
-        'personnel_id'    => 'required|integer',
-
-        'name'            => 'required|string',
-
-        'type'            => 'nullable|string',
-
-        'military_school' => 'nullable|string',
-
-        'end_date'        => 'nullable|string',
-    ]);
-
-    // =========================
-    // TRADE TRAINING
-    // =========================
-
-    if ($request->type === 'trade') {
-
-        DB::table('personnel_trades')
-            ->where('personnel_id', $request->personnel_id)
-            ->where('is_current', 1)
-            ->update([
-
-                'is_current' => 0,
-                'updated_at' => now()
-            ]);
-
-        $trade = DB::table('trades')
-            ->where('name', $request->name)
-            ->first();
-
-        if ($trade) {
-
-            DB::table('personnel_trades')
-                ->insert([
-
-                    'personnel_id' => $request->personnel_id,
-
-                    'trade_id'     => $trade->id,
-
-                    'start_date'   => now(),
-
-                    'is_current'   => 1,
-
-                    'created_at'   => now(),
-
-                    'updated_at'   => now()
-                ]);
-        }
-    }
-
-    // =========================
-    // TRAINING TABLE
-    // =========================
-
-    $training = DB::table('trainings')
-        ->where('name', $request->name)
-        ->first();
-
-    if (!$training) {
-
-        $trainingId = DB::table('trainings')
             ->insertGetId([
 
-                'name'       => $request->name,
+                'personnel_id'   => $data['personnel_id'],
 
-                'category'   => $request->type,
+                'operation_name' => $data['operation_name'],
 
-                'created_at' => now(),
+                'start_date'     => $data['start_date'] ?? null,
 
-                'updated_at' => now()
-            ]);
+                'end_date'       => $data['end_date'] ?? null,
 
-    } else {
+                'created_at'     => now(),
 
-        $trainingId = $training->id;
-    }
-
-    // =========================
-    // PERSONNEL TRAINING
-    // =========================
-
-    DB::table('personnel_trainings')
-        ->insert([
-
-            'personnel_id'    => $request->personnel_id,
-
-            'training_id'     => $trainingId,
-
-            'military_school' => $request->military_school,
-
-            'end_date'        => $request->end_date
-        ]);
-
-    return response()->json([
-
-        'message' => 'Training added successfully'
-    ]);
-}
-
-
-    // =========================
-    // 🔹 UPDATE
-    // =========================
-
-
-public function updateEducation($id, Request $request)
-{
-    \Log::info('EDUCATION UPDATE REQUEST', [
-        'id'   => $id,
-        'data' => $request->all()
-
-    ]);
-
-    try {
-
-        DB::table('personnel_education')
-            ->where('id', $id)
-            ->update([
-
-                'name'            => $request->name,
-                'institution'     => $request->institution,
-                'year_completion' => $request->year_completion,
-                'updated_at'      => now()
-            ]);
-
-        \Log::info('EDUCATION UPDATED', [
-            'id' => $id
-        ]);
-
-        return response()->json([
-            'message' => 'Education updated successfully'
-        ]);
-
-    } catch (\Exception $e) {
-
-        \Log::error('EDUCATION UPDATE ERROR', [
-            'message' => $e->getMessage(),
-            'id' => $id,
-            'data' => $request->all()
-        ]);
-
-        return response()->json([
-            'message' => $e->getMessage()
-        ], 500);
-    }
-}
-    public function updateOperation($id, Request $request)
-    {
-        DB::table('personnel_operations')
-            ->where('id', $id)
-            ->update([
-                'operation_name' => $request->operation_name,
-                'start_date'     => $request->start_date,
-                'end_date'       => $request->end_date,
                 'updated_at'     => now()
+
             ]);
 
-        return response()->json(['message' => 'Operation updated']);
+        return response()->json([
 
+            'message' => 'Operation added successfully',
 
-}
+            'id' => $id
 
-public function updateTraining($id, Request $request)
-{
-    DB::beginTransaction();
-
-    try {
-
-        $request->validate([
-
-            'personnel_id'    => 'required|integer',
-
-            'name'            => 'required|string',
-
-            'type'            => 'required|string',
-
-            'military_school' => 'nullable|string',
-
-            'end_date'        => 'nullable|string',
         ]);
+    }
 
-        $personTraining = DB::table('personnel_trainings')
-            ->where('id', $id)
-            ->first();
+    // ==========================================
+    // STORE TRAINING
+    // ==========================================
 
-        if (!$personTraining) {
+    public function storeTraining(Request $request)
+    {
+        DB::beginTransaction();
 
-            return response()->json([
-                'message' => 'Training not found'
-            ], 404);
-        }
+        try {
 
-        // ===================================
-        // CASE 1: TRADE TRAINING
-        // ===================================
+            $data = $request->validate([
 
-        if ($request->type === 'trade') {
+                'personnel_id'    => 'required|integer',
 
-            $trade = DB::table('trades')
-                ->where('name', $request->name)
-                ->first();
+                'name'            => 'required|string',
 
-            if ($trade) {
+                'type'            => 'required|string',
+
+                'military_school' => 'nullable|string',
+
+                'end_date'        => 'nullable|string'
+
+            ]);
+
+            // =====================================
+            // TRADE TRAINING
+            // =====================================
+
+            if ($data['type'] === 'trade') {
 
                 DB::table('personnel_trades')
-                    ->where('personnel_id', $request->personnel_id)
+
+                    ->where('personnel_id', $data['personnel_id'])
+
                     ->where('is_current', 1)
+
                     ->update([
 
-                        'trade_id'   => $trade->id,
+                        'is_current' => 0,
 
                         'updated_at' => now()
+
                     ]);
+
+                $trade = DB::table('trades')
+
+                    ->where('name', $data['name'])
+
+                    ->first();
+
+                if ($trade) {
+
+                    DB::table('personnel_trades')
+
+                        ->insert([
+
+                            'personnel_id' => $data['personnel_id'],
+
+                            'trade_id'     => $trade->id,
+
+                            'start_date'   => now(),
+
+                            'is_current'   => 1,
+
+                            'created_at'   => now(),
+
+                            'updated_at'   => now()
+
+                        ]);
+
+                }
+
             }
-        }
 
-        // ===================================
-        // TRAININGS TABLE
-        // ===================================
+            // =====================================
+            // TRAINING MASTER
+            // =====================================
 
-        $training = DB::table('trainings')
-            ->where('name', $request->name)
-            ->first();
+            $training = DB::table('trainings')
 
-        if (!$training) {
+                ->where('name', $data['name'])
 
-            $trainingId = DB::table('trainings')
-                ->insertGetId([
+                ->first();
 
-                    'name'       => $request->name,
+            if (!$training) {
 
-                    'category'   => $request->type,
+                $trainingId = DB::table('trainings')
 
-                    'created_at' => now(),
+                    ->insertGetId([
 
-                    'updated_at' => now()
+                        'name'       => $data['name'],
+
+                        'category'   => $data['type'],
+
+                        'created_at' => now(),
+
+                        'updated_at' => now()
+
+                    ]);
+
+            } else {
+
+                $trainingId = $training->id;
+
+            }
+
+            // =====================================
+            // PERSONNEL TRAINING
+            // =====================================
+
+            DB::table('personnel_trainings')
+
+                ->insert([
+
+                    'personnel_id'    => $data['personnel_id'],
+
+                    'training_id'     => $trainingId,
+
+                    'military_school' => $data['military_school'] ?? null,
+
+                    'end_date'        => $data['end_date'] ?? null,
+
+                    'created_at'      => now(),
+
+                    'updated_at'      => now()
+
                 ]);
 
-        } else {
+            DB::commit();
 
-            $trainingId = $training->id;
-        }
+            return response()->json([
 
-        // ===================================
-        // PERSONNEL TRAININGS
-        // ===================================
+                'message' => 'Training added successfully'
 
-        DB::table('personnel_trainings')
-            ->where('id', $id)
-            ->update([
-
-                'training_id'     => $trainingId,
-
-                'military_school' => $request->military_school,
-
-                'end_date'        => $request->end_date
             ]);
 
-        DB::commit();
+        } catch (\Exception $e) {
 
-        return response()->json([
+            DB::rollBack();
 
-            'message' => 'Training updated successfully'
-        ]);
+            return response()->json([
 
-    } catch (\Exception $e) {
+                'message' => $e->getMessage()
 
-        DB::rollBack();
+            ], 500);
 
-        return response()->json([
+        }
 
-            'message' => $e->getMessage()
+    }
+        // ==========================================
+    // UPDATE EDUCATION
+    // ==========================================
 
-        ], 500);
+    public function updateEducation($id, Request $request)
+    {
+        try {
+
+            $data = $request->validate([
+
+                'qualification'   => 'required|string',
+
+                'field_of_study'  => 'nullable|string',
+
+                'institution'     => 'nullable|string',
+
+               'year_completion' => 'nullable|integer|min:1900|max:2100'
+
+            ]);
+
+            DB::table('personnel_education')
+
+                ->where('id', $id)
+
+                ->update([
+
+                    'qualification'   => $data['qualification'],
+
+                    'field_of_study'  => $data['field_of_study'] ?? null,
+
+                    'institution'     => $data['institution'] ?? null,
+
+                    'year_completion' => $data['year_completion'] ?? null,
+
+                    'updated_at'      => now()
+
+                ]);
+
+            return response()->json([
+
+                'message' => 'Education updated successfully'
+
+            ]);
+
+        } catch (\Exception $e) {
+
+            return response()->json([
+
+                'message' => $e->getMessage()
+
+            ], 500);
+
+        }
     }
 
-}
+    // ==========================================
+    // UPDATE OPERATION
+    // ==========================================
+
+    public function updateOperation($id, Request $request)
+    {
+        $data = $request->validate([
+
+            'operation_name' => 'required|string',
+
+            'start_date'     => 'nullable|date',
+
+            'end_date'       => 'nullable|date'
+
+        ]);
+
+        DB::table('personnel_operations')
+
+            ->where('id', $id)
+
+            ->update([
+
+                'operation_name' => $data['operation_name'],
+
+                'start_date'     => $data['start_date'] ?? null,
+
+                'end_date'       => $data['end_date'] ?? null,
+
+                'updated_at'     => now()
+
+            ]);
+
+        return response()->json([
+
+            'message' => 'Operation updated successfully'
+
+        ]);
+    }
+
+    // ==========================================
+    // UPDATE TRAINING
+    // ==========================================
+
+    public function updateTraining($id, Request $request)
+    {
+        DB::beginTransaction();
+
+        try {
+
+            $data = $request->validate([
+
+                'personnel_id'    => 'required|integer',
+
+                'name'            => 'required|string',
+
+                'type'            => 'required|string',
+
+                'military_school' => 'nullable|string',
+
+                'end_date'        => 'nullable|string'
+
+            ]);
+
+            $personTraining = DB::table('personnel_trainings')
+
+                ->where('id', $id)
+
+                ->first();
+
+            if (!$personTraining) {
+
+                return response()->json([
+
+                    'message' => 'Training not found'
+
+                ], 404);
+
+            }
+
+            // =====================================
+            // UPDATE TRADE IF TRADE TRAINING
+            // =====================================
+
+            if ($data['type'] === 'trade') {
+
+                $trade = DB::table('trades')
+
+                    ->where('name', $data['name'])
+
+                    ->first();
+
+                if ($trade) {
+
+                    DB::table('personnel_trades')
+
+                        ->where('personnel_id', $data['personnel_id'])
+
+                        ->where('is_current', 1)
+
+                        ->update([
+
+                            'trade_id'   => $trade->id,
+
+                            'updated_at' => now()
+
+                        ]);
+
+                }
+
+            }
+
+            // =====================================
+            // TRAINING MASTER
+            // =====================================
+
+            $training = DB::table('trainings')
+
+                ->where('name', $data['name'])
+
+                ->first();
+
+            if (!$training) {
+
+                $trainingId = DB::table('trainings')
+
+                    ->insertGetId([
+
+                        'name'       => $data['name'],
+
+                        'category'   => $data['type'],
+
+                        'created_at' => now(),
+
+                        'updated_at' => now()
+
+                    ]);
+
+            } else {
+
+                $trainingId = $training->id;
+
+            }
+
+            // =====================================
+            // UPDATE PERSONNEL TRAINING
+            // =====================================
+
+            DB::table('personnel_trainings')
+
+                ->where('id', $id)
+
+                ->update([
+
+                    'training_id'     => $trainingId,
+
+                    'military_school' => $data['military_school'] ?? null,
+
+                    'end_date'        => $data['end_date'] ?? null,
+
+                    'updated_at'      => now()
+
+                ]);
+
+            DB::commit();
+
+            return response()->json([
+
+                'message' => 'Training updated successfully'
+
+            ]);
+
+        } catch (\Exception $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+
+                'message' => $e->getMessage()
+
+            ], 500);
+
+        }
+    }
 
 }

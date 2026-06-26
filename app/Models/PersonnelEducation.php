@@ -9,9 +9,29 @@ class PersonnelEducation extends Model
     protected $table = 'personnel_education';
 
     protected $fillable = [
+
         'personnel_id',
-        'name',
+
+        'qualification',
+
+        'field_of_study',
+
         'institution',
-    'year_completion'
+
+        'year_completion'
+
     ];
+
+    public function personnel()
+    {
+        return $this->belongsTo(Personnel::class);
+    }
+
+    public function qualification()
+    {
+        return $this->belongsTo(
+            Qualification::class,
+            'qualification_id'
+        );
+    }
 }

@@ -8,73 +8,23 @@ use App\Models\Trade;
 use App\Models\PersonnelTrade;
 use App\Models\PersonnelEducation;
 use App\Models\PersonnelAppointment;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
 use App\Models\Training;
 use App\Models\PersonnelTraining;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
+use App\Models\RetirementRule;
 class PersonnelController extends Controller
 {
-    // =============================
-    // LIST
-    // =============================
-public function index(Request $request)
-{
-    $query = Personnel::with([
+    // ==================================================
+    // LIST PERSONNEL
+    // ==================================================
 
-        'education',
-        'currentPromotion.rank',
-        'currentTrade.trade',
-        'currentAppointment.appointment',
-        'trainings',
-        'trainings.training'
-
-    ]);
-
-    if ($request->filled('unit_id')) {
-
-        $query->where(
-            'unit_id',
-            $request->unit_id
-        );
-    }
-
-    if ($request->filled('search')) {
-
-        $s = $request->search;
-
-        $query->where(function ($q) use ($s) {
-
-            $q->where(
-                'full_name',
-                'like',
-                "%{$s}%"
-            )
-
-            ->orWhere(
-                'service_number',
-                'like',
-                "%{$s}%"
-            );
-        });
-    }
-
-    return response()->json(
-
-        $query->latest()->paginate(20)
-
-    );
-}
-
-    // =============================
-    // BY UNIT
-    // =============================
-
-
-public function byUnit($unitId)
-{
-    return Personnel::with([
+    public function index(Request $request)
+    {
+        $query = Personnel::with([
 
             'education',
 
@@ -84,479 +34,640 @@ public function byUnit($unitId)
 
             'currentAppointment.appointment',
 
-            'currentAppointment.appointment.unit',
-
             'trainings',
 
             'trainings.training'
 
-        ])
+        ]);
 
-        ->join('promotions', function ($join) {
+        if ($request->filled('unit_id')) {
 
-            $join->on(
-                'personnel.id',
+            $query->where(
+                'unit_id',
+                $request->unit_id
+            );
+
+        }
+
+        if ($request->filled('search')) {
+
+            $search = $request->search;
+
+            $query->where(function ($q) use ($search) {
+
+                $q->where(
+                    'full_name',
+                    'like',
+                    "%{$search}%"
+                )
+
+                ->orWhere(
+                    'service_number',
+                    'like',
+                    "%{$search}%"
+                );
+
+            });
+
+        }
+
+        return response()->json(
+
+            $query
+                ->latest()
+                ->paginate(20)
+
+        );
+    }
+
+    // ==================================================
+    // PERSONNEL BY UNIT
+    // ==================================================
+
+    public function byUnit($unitId)
+    {
+        return Personnel::with([
+
+                'education',
+
+                'currentPromotion.rank',
+
+                'currentTrade.trade',
+
+                'currentAppointment.appointment',
+
+                'currentAppointment.appointment.unit',
+
+                'trainings',
+
+                'trainings.training'
+
+            ])
+
+            ->join('promotions', function ($join) {
+
+                $join->on(
+                    'personnel.id',
+                    '=',
+                    'promotions.personnel_id'
+                )
+
+                ->where(
+                    'promotions.is_current',
+                    true
+                );
+
+            })
+
+            ->join(
+                'ranks',
+                'promotions.rank_id',
                 '=',
-                'promotions.personnel_id'
+                'ranks.id'
             )
 
             ->where(
-                'promotions.is_current',
-                1
-            );
-        })
+                'personnel.unit_id',
+                $unitId
+            )
 
-        ->join(
-            'ranks',
-            'promotions.rank_id',
-            '=',
-            'ranks.id'
-        )
+            // Officers first
+            ->orderByRaw("
+                CASE
+                    WHEN ranks.category='OFFICER'
+                    THEN 1
+                    ELSE 2
+                END
+            ")
 
-        ->where('personnel.unit_id', $unitId)
+            // Highest rank first
+            ->orderBy(
+                'ranks.level',
+                'desc'
+            )
 
-        // OFFICERS FIRST
-        ->orderByRaw("
-            CASE
-                WHEN ranks.category = 'OFFICER'
-                THEN 1
-                ELSE 2
-            END
-        ")
+            ->select(
+                'personnel.*'
+            )
 
-        // HIGHEST LEVEL FIRST
-        ->orderBy('ranks.level', 'desc')
-
-        ->select('personnel.*')
-
-        ->get();
-}
-
-
-
-    // =============================
-    // STORE
-    // =============================
-    public function store(Request $request)
-    {
-        DB::beginTransaction();
-
-        try {
-
-            $validated = $request->validate([
-                'full_name'          => 'required|string',
-                'service_number'     => 'required|unique:personnel,service_number',
-                'gender'             => 'required|in:MALE,FEMALE',
-                'date_of_birth'      => 'required|date',
-                'date_of_enlistment' => 'required|date',
-                'education_level'    => 'required|string',
-
-                'rank_id'            => 'required|exists:ranks,id',
-                'trade_id'           => 'required|exists:trades,id',
-                'appointment_id'     => 'required|exists:appointments,id',
-                'date_of_promotion'  => 'required|date',
-
-                'unit_id'            => 'required|exists:units,id'
-            ]);
-Log::info('TRADE DATA', [
-    'military_year_completion' => $request->military_year_completion,
-    'military_school' => $request->military_school,
-    'all' => $request->all()
-]);
-            // =============================
-            // 1. PERSONNEL
-            // =============================
-            $person = Personnel::create([
-                'full_name'          => $validated['full_name'],
-                'service_number'     => $validated['service_number'],
-                'gender'             => $validated['gender'],
-                'date_of_birth'      => $validated['date_of_birth'],
-                'date_of_enlistment' => $validated['date_of_enlistment'],
-                'education_level'    => $validated['education_level'],
-                'unit_id'            => $validated['unit_id'],
-                'status'             => 'ACTIVE'
-            ]);
-
-            // =============================
-            // 2. PROMOTION
-            // =============================
-            Promotion::create([
-                'personnel_id'  => $person->id,
-                'rank_id'       => $validated['rank_id'],
-                'date_promoted' => $validated['date_of_promotion'],
-                'is_current'    => true
-            ]);
-
-            // =============================
-            // 3. TRADE
-            // =============================
-            PersonnelTrade::create([
-                'personnel_id' => $person->id,
-                'trade_id'     => $validated['trade_id'],
-                'start_date'   => now(),
-                'end_date'     => $request->military_year_completion,
-                'is_current'   => true
-            ]);
-
-
-            $selectedTrade = DB::table('trades')
-            ->where('id', $validated['trade_id'])
-            ->first();
-
-            if ($selectedTrade) {
-
-          
-            $training = Training::whereRaw(
-                'LOWER(name) = ?',
-                [strtolower($selectedTrade->name)]
-            )->first();
-
-
-            if (!$training) {
-
-                $training = Training::create([
-                    'name' => $selectedTrade->name
-                ]);
-            }
-
-          
-            PersonnelTraining::create([
-
-                'personnel_id' => $person->id,
-                'training_id' => $training->id,
-                'military_school' => $request->military_school,
-                'end_date' => $request->military_year_completion
-            ]);
-        }
-
-            // =============================
-            // 4. APPOINTMENT
-            // =============================
-            PersonnelAppointment::create([
-                'personnel_id'  => $person->id,
-                'appointment_id'=> $validated['appointment_id'],
-                'start_date'    => now(),
-                'end_date'      => null,
-                'is_current'    => true
-            ]);
-
-                        // =============================
-            // 5. EDUCATION
-            // =============================
-             PersonnelEducation::create([
-                'personnel_id' => $person->id,
-                'name' => $validated['education_level'],
-                'institution'     => $request->institution,
-                'year_completion' => $request->year_completion,
-                'created_at' => now(),
-                'updated_at' => now()
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'message' => 'Personnel created successfully'
-            ], 201);
-
-        } catch (\Exception $e) {
-
-            DB::rollBack();
-
-            Log::error('STORE ERROR', [
-                'error' => $e->getMessage(),
-                'data'  => $request->all()
-            ]);
-
-            return response()->json([
-                'message' => 'Failed to save',
-                'error'   => $e->getMessage()
-            ], 500);
-        }
+            ->get();
     }
+    // ==================================================
+// STORE PERSONNEL
+// ==================================================
 
-    // =============================
-    // SHOW
-    // =============================
-public function show($id)
-{
-    $person = Personnel::findOrFail($id);
-
-   
-$person->load([
-    'education',
-    'currentPromotion',
-    'currentPromotion.rank',
-    'currentTrade',
-    'currentTrade.trade',
-    'currentAppointment',
-    'currentAppointment.appointment',
-    'currentAppointment.appointment.unit',
-    'trainings',
-      'unit',
-    'trainings.training'
-]);
-
-    return $person;
-}
-
-    // =============================
-    // UPDATE
-    // =============================
-    public function update(Request $request, $id)
+public function store(Request $request)
 {
     DB::beginTransaction();
 
     try {
 
-        $person = Personnel::findOrFail($id);
-
         $validated = $request->validate([
+
             'full_name'          => 'required|string',
-            'service_number'     => [
-                'required',
-                Rule::unique('personnel', 'service_number')->ignore($person->id)
-            ],
+
+            'service_number'     => 'required|unique:personnel,service_number',
+
             'gender'             => 'required|in:MALE,FEMALE',
+
             'date_of_birth'      => 'required|date',
+
             'date_of_enlistment' => 'required|date',
-            'education_level'    => 'required|string',
+
+            'qualification'      => 'required|string',
+
+            'field_of_study'     => 'nullable|string',
+
+            'institution'        => 'nullable|string',
+
             'year_completion'    => 'nullable|string',
+
             'rank_id'            => 'required|exists:ranks,id',
+
             'trade_id'           => 'required|exists:trades,id',
+
             'appointment_id'     => 'required|exists:appointments,id',
-            'unit_id'            => 'required|exists:units,id',
+
+            'date_of_promotion'  => 'required|date',
+
+            'unit_id'            => 'required|exists:units,id'
+
         ]);
-Log::info('TRADE DATA', [
-    'military_year_completion' => $request->military_year_completion,
-    'military_school' => $request->military_school,
-    'all' => $request->all()
-]);
-        // =============================
-        // 1. UPDATE BASIC INFO
-        // =============================
-        $person->update([
+
+        Log::info('STORE PERSONNEL', [
+
+            'data' => $request->all()
+
+        ]);
+
+        // =====================================
+        // PERSONNEL
+        // =====================================
+
+        $person = Personnel::create([
+
             'full_name'          => $validated['full_name'],
+
             'service_number'     => $validated['service_number'],
+
             'gender'             => $validated['gender'],
+
             'date_of_birth'      => $validated['date_of_birth'],
+
             'date_of_enlistment' => $validated['date_of_enlistment'],
-            'education_level'    => $validated['education_level'],
+
             'unit_id'            => $validated['unit_id'],
+
+            'status'             => 'ACTIVE'
+
         ]);
 
-        // =============================
-        // 2. UPDATE RANK (PROMOTION)
-        // =============================
-        $currentRank = Promotion::where('personnel_id', $person->id)
-            ->where('is_current', true)
-            ->first();
+        // =====================================
+        // PROMOTION
+        // =====================================
 
-        if (!$currentRank || $currentRank->rank_id != $validated['rank_id']) {
+        Promotion::create([
 
-            // close old
-            if ($currentRank) {
-                $currentRank->update([
-                    'is_current' => false
-                ]);
-            }
+            'personnel_id'  => $person->id,
 
-            // new
-            Promotion::create([
-                'personnel_id'  => $person->id,
-                'rank_id'       => $validated['rank_id'],
-                'date_promoted' => now(),
-                'is_current'    => true
-            ]);
-        }
+            'rank_id'       => $validated['rank_id'],
 
-// =============================
-// 3. UPDATE TRADE
-// =============================
+            'date_promoted' => $validated['date_of_promotion'],
 
-$currentTrade = PersonnelTrade::where(
-'personnel_id',
-$person->id
-)
-->where('is_current', 1)
-->first();
+            'is_current'    => true
 
-if ($currentTrade) {
+        ]);
 
+        // =====================================
+        // TRADE
+        // =====================================
 
-// Trade ya zamani iliyokuwa imeandikwa
-$oldTradeId = $currentTrade->trade_id;
-    // =============================
-    // UPDATE ACTIVE TRADE
-    // =============================
+        PersonnelTrade::create([
 
- $currentTrade->update([
-    'trade_id' => $validated['trade_id'],
-    'end_date' => $request->military_year_completion
-]);
+            'personnel_id' => $person->id,
 
-// Fanya update kama trade imebadilika
-if ($oldTradeId != $validated['trade_id']) {
+            'trade_id'     => $validated['trade_id'],
 
+            'start_date'   => now(),
 
-    // =============================
-    // TRADE MPYA
-    // =============================
+            'end_date'     => $request->military_year_completion,
 
-    $newTrade = Trade::find(
-        $validated['trade_id']
-    );
+            'is_current'   => true
 
-    if ($newTrade) {
+        ]);
 
-        // =============================
-        // ANGALIA TRAINING MPYA
-        // =============================
+        $selectedTrade = Trade::find(
 
-        $newTraining = Training::whereRaw(
-            'LOWER(name) = ?',
-            [strtolower(trim($newTrade->name))]
-        )->first();
+            $validated['trade_id']
 
-        // kama haipo, create
-        if (!$newTraining) {
-
-            $newTraining = Training::create([
-                'name' => $newTrade->name
-            ]);
-        }
-
-        // =============================
-        // TRADE YA ZAMANI
-        // =============================
-
-        $oldTrade = Trade::find(
-            $oldTradeId
         );
 
-        if ($oldTrade) {
+                if ($selectedTrade) {
 
-            // =============================
-            // TRAINING YA ZAMANI
-            // =============================
-
-            $oldTraining = Training::whereRaw(
+            $training = Training::whereRaw(
                 'LOWER(name) = ?',
-                [strtolower(trim($oldTrade->name))]
+                [strtolower($selectedTrade->name)]
             )->first();
 
-            if ($oldTraining) {
+            if (!$training) {
 
-                // =============================
-                // TAFUTA RECORD YA AWALI
-                // =============================
+                $training = Training::create([
 
-                $personTraining = PersonnelTraining::where(
-                        'personnel_id',
-                        $person->id
-                    )
-                    ->where(
-                        'training_id',
-                        $oldTraining->id
-                    )
-                    ->first();
+                    'name' => $selectedTrade->name
 
-                // =============================
-                // EDIT RECORD YA AWALI
-                // =============================
-
-                if ($personTraining) {
-
-                    $personTraining->update([
-
-                        'training_id' =>
-                            $newTraining->id,
-
-                        'military_school' =>
-                            $request->military_school,
-
-                        'end_date' =>
-                            $request->military_year_completion
-                    ]);
-                }
-            }
-        }
-    }
-}
-
-
-}
-
-// =============================
-        // 4. UPDATE APPOINTMENT
-        // =============================
-        $currentAppointment = PersonnelAppointment::where('personnel_id', $person->id)
-            ->where('is_current', true)
-            ->first();
-
-        if (!$currentAppointment || $currentAppointment->appointment_id != $validated['appointment_id']) {
-
-            if ($currentAppointment) {
-                $currentAppointment->update([
-                    'is_current' => false,
-                    'end_date'   => now()
                 ]);
+
             }
 
-            PersonnelAppointment::create([
-                'personnel_id'  => $person->id,
-                'appointment_id'=> $validated['appointment_id'],
-                'start_date'    => now(),
-                'end_date'      => null,
-                'is_current'    => true
+            PersonnelTraining::create([
+
+                'personnel_id'    => $person->id,
+
+                'training_id'     => $training->id,
+
+                'military_school' => $request->military_school,
+
+                'end_date'        => $request->military_year_completion
+
             ]);
+
         }
-// =============================
-// 5. UPDATE EDUCATION
-// =============================
 
-$education = PersonnelEducation::where(
-    'personnel_id',
-    $person->id
-)->first();
+        // =====================================
+        // APPOINTMENT
+        // =====================================
 
-if ($education) {
+        PersonnelAppointment::create([
 
-    $education->update([
+            'personnel_id'   => $person->id,
 
-        'name' => $validated['education_level'],
+            'appointment_id' => $validated['appointment_id'],
 
-        'institution' =>
-            $request->institution,
+            'start_date'     => now(),
 
-        'year_completion' =>
-            $request->year_completion
-    ]);
+            'end_date'       => null,
 
-} else {
+            'is_current'     => true
 
-    PersonnelEducation::create([
+        ]);
 
-        'personnel_id' =>
-            $person->id,
+        // =====================================
+        // EDUCATION
+        // =====================================
 
-        'name' =>
-            $validated['education_level'],
+        PersonnelEducation::create([
 
-        'institution' =>
-            $request->institution,
+            'personnel_id'    => $person->id,
 
-        'year_completion' =>
-            $request->year_completion,
+            'qualification'   => $validated['qualification'],
 
-        'created_at' => now(),
+            'field_of_study'  => $request->field_of_study,
 
-        'updated_at' => now()
-    ]);
-}
+            'institution'     => $request->institution,
+
+            'year_completion' => $request->year_completion
+
+        ]);
+
         DB::commit();
 
         return response()->json([
+
+            'message' => 'Personnel created successfully'
+
+        ], 201);
+
+    } catch (\Exception $e) {
+
+        DB::rollBack();
+
+        Log::error('STORE ERROR', [
+
+            'error' => $e->getMessage(),
+
+            'data'  => $request->all()
+
+        ]);
+
+        return response()->json([
+
+            'message' => 'Failed to save',
+
+            'error'   => $e->getMessage()
+
+        ], 500);
+
+    }
+
+}
+
+// ==================================================
+// SHOW PERSONNEL
+// ==================================================
+
+public function show($id)
+{
+    $person = Personnel::with([
+
+        'education',
+        'currentPromotion.rank',
+        'currentTrade.trade',
+        'currentAppointment.appointment',
+        'currentAppointment.appointment.unit',
+        'trainings',
+        'trainings.training',
+        'unit'
+
+    ])->findOrFail($id);
+
+    $person->latest_education = DB::table('personnel_education')
+        ->where('personnel_id', $person->id)
+        ->latest('id')
+        ->first();
+
+    return response()->json($person);
+}
+// ==================================================
+// UPDATE PERSONNEL
+// ==================================================
+public function update(Request $request, $id)
+{
+    $person = Personnel::findOrFail($id);
+
+    DB::beginTransaction();
+
+    try {
+
+$validated = $request->validate([
+
+    'full_name'          => 'required|string',
+
+    'service_number'     => [
+        'required',
+        Rule::unique('personnel', 'service_number')
+            ->ignore($person->id)
+    ],
+
+    'gender'             => 'required|in:MALE,FEMALE',
+
+    'date_of_birth'      => 'required|date',
+
+    'date_of_enlistment' => 'required|date',
+
+    'qualification'      => 'required|string',
+
+    'field_of_study'     => 'nullable|string',
+
+    'institution'        => 'nullable|string',
+
+    'year_completion'    => 'nullable|string',
+
+    'rank_id'            => 'required|exists:ranks,id',
+
+    'trade_id'           => 'required|exists:trades,id',
+
+    'appointment_id'     => 'required|exists:appointments,id',
+
+    'date_of_promotion'  => 'required|date',
+
+    'unit_id'            => 'required|exists:units,id'
+
+]);
+
+        $person->update([
+
+            'full_name'          => $validated['full_name'],
+
+            'service_number'     => $validated['service_number'],
+
+            'gender'             => $validated['gender'],
+
+            'date_of_birth'      => $validated['date_of_birth'],
+
+            'date_of_enlistment' => $validated['date_of_enlistment'],
+
+            'unit_id'            => $validated['unit_id'],
+
+            'status'             => $request->status ?? 'ACTIVE'
+
+        ]);
+
+        // =====================================
+        // CURRENT PROMOTION
+        // =====================================
+
+        $promotion = Promotion::where(
+            'personnel_id',
+            $person->id
+        )
+        ->where('is_current', true)
+        ->first();
+
+        if ($promotion) {
+
+            $promotion->update([
+
+                'rank_id'       => $validated['rank_id'],
+
+                'date_promoted' => $validated['date_of_promotion']
+
+            ]);
+
+        } else {
+
+            Promotion::create([
+
+                'personnel_id'  => $person->id,
+
+                'rank_id'       => $validated['rank_id'],
+
+                'date_promoted' => $validated['date_of_promotion'],
+
+                'is_current'    => true
+
+            ]);
+
+        }
+
+        // =====================================
+        // CURRENT TRADE
+        // =====================================
+
+        $trade = PersonnelTrade::where(
+            'personnel_id',
+            $person->id
+        )
+        ->where('is_current', true)
+        ->first();
+
+        if ($trade) {
+
+            $trade->update([
+
+                'trade_id' => $validated['trade_id']
+
+            ]);
+
+        } else {
+
+            PersonnelTrade::create([
+
+                'personnel_id' => $person->id,
+
+                'trade_id'     => $validated['trade_id'],
+
+                'start_date'   => now(),
+
+                'is_current'   => true
+
+            ]);
+
+        }
+
+                // =====================================
+        // CURRENT APPOINTMENT
+        // =====================================
+
+        $appointment = PersonnelAppointment::where(
+            'personnel_id',
+            $person->id
+        )
+        ->where('is_current', true)
+        ->first();
+
+        if ($appointment) {
+
+            $appointment->update([
+
+                'appointment_id' => $validated['appointment_id']
+
+            ]);
+
+        } else {
+
+            PersonnelAppointment::create([
+
+                'personnel_id'   => $person->id,
+
+                'appointment_id' => $validated['appointment_id'],
+
+                'start_date'     => now(),
+
+                'is_current'     => true
+
+            ]);
+
+        }
+
+        // =====================================
+        // EDUCATION
+        // =====================================
+
+   $education = PersonnelEducation::where(
+    'personnel_id',
+    $person->id
+)
+->orderByDesc('id')
+->first();
+
+        if ($education) {
+
+            $education->update([
+
+                'qualification'   => $validated['qualification'],
+
+                'field_of_study'  => $request->field_of_study,
+
+                'institution'     => $request->institution,
+
+                'year_completion' => $request->year_completion
+
+            ]);
+
+        } else {
+
+            PersonnelEducation::create([
+
+                'personnel_id'    => $person->id,
+
+                'qualification'   => $validated['qualification'],
+
+                'field_of_study'  => $request->field_of_study,
+
+                'institution'     => $request->institution,
+
+                'year_completion' => $request->year_completion
+
+            ]);
+
+        }
+
+        // =====================================
+        // TRAINING
+        // =====================================
+
+        $selectedTrade = Trade::find(
+            $validated['trade_id']
+        );
+
+        if ($selectedTrade) {
+
+            $training = Training::whereRaw(
+                'LOWER(name)=?',
+                [strtolower($selectedTrade->name)]
+            )->first();
+
+            if (!$training) {
+
+                $training = Training::create([
+
+                    'name' => $selectedTrade->name
+
+                ]);
+
+            }
+
+            $personTraining = PersonnelTraining::where(
+                'personnel_id',
+                $person->id
+            )->first();
+
+            if ($personTraining) {
+
+                $personTraining->update([
+
+                    'training_id'     => $training->id,
+
+                    'military_school' => $request->military_school,
+
+                    'end_date'        => $request->military_year_completion
+
+                ]);
+
+            } else {
+
+                PersonnelTraining::create([
+
+                    'personnel_id'    => $person->id,
+
+                    'training_id'     => $training->id,
+
+                    'military_school' => $request->military_school,
+
+                    'end_date'        => $request->military_year_completion
+
+                ]);
+
+            }
+
+        }
+
+        DB::commit();
+
+        return response()->json([
+
             'message' => 'Personnel updated successfully'
+
         ]);
 
     } catch (\Exception $e) {
@@ -564,41 +675,229 @@ if ($education) {
         DB::rollBack();
 
         Log::error('UPDATE ERROR', [
-            'error' => $e->getMessage()
+
+            'error' => $e->getMessage(),
+
+            'personnel_id' => $person->id
+
         ]);
 
         return response()->json([
-            'message' => 'Update failed',
+
+            'message' => 'Failed to update personnel',
+
             'error'   => $e->getMessage()
+
         ], 500);
+
     }
+
 }
-    // =============================
-    // DELETE
-    // =============================
-    public function destroy($id)
-    {
-        $person = Personnel::findOrFail($id);
+
+// ==================================================
+// DELETE PERSONNEL
+// ==================================================
+
+public function destroy(Personnel $person)
+{
+    DB::beginTransaction();
+
+    try {
+
+        Promotion::where(
+            'personnel_id',
+            $person->id
+        )->delete();
+
+        PersonnelTrade::where(
+            'personnel_id',
+            $person->id
+        )->delete();
+
+        PersonnelAppointment::where(
+            'personnel_id',
+            $person->id
+        )->delete();
+
+        PersonnelEducation::where(
+            'personnel_id',
+            $person->id
+        )->delete();
+
+        PersonnelTraining::where(
+            'personnel_id',
+            $person->id
+        )->delete();
+
         $person->delete();
 
+        DB::commit();
+
         return response()->json([
-            'message' => 'Deleted successfully'
+
+            'message' => 'Personnel deleted successfully'
+
         ]);
+
+    } catch (\Exception $e) {
+
+        DB::rollBack();
+
+        Log::error('DELETE ERROR', [
+
+            'error' => $e->getMessage(),
+
+            'personnel_id' => $person->id
+
+        ]);
+
+        return response()->json([
+
+            'message' => 'Failed to delete personnel',
+
+            'error' => $e->getMessage()
+
+        ], 500);
+
+    }
+}
+
+//
+// ==================================================
+// SEARCH PERSONNEL
+// ==================================================
+
+public function searchPersonnel(Request $request)
+{
+    $term = $request->q;
+
+    if (!$term) {
+        return response()->json([]);
     }
 
+    $personnel = Personnel::select(
+        'id',
+        'full_name',
+        'service_number'
+    )
+    ->where(function ($query) use ($term) {
 
-public function search(Request $request)
-{
-    $q = $request->q;
-
-    return Personnel::select(
-            'id',
-            'service_number',
-            'full_name'
+        $query->where(
+            'full_name',
+            'like',
+            "%{$term}%"
         )
-        ->where('full_name', 'like', "%{$q}%")
-        ->orWhere('service_number', 'like', "%{$q}%")
-        ->limit(20)
-        ->get();
+        ->orWhere(
+            'service_number',
+            'like',
+            "%{$term}%"
+        );
+
+    })
+    ->orderBy('full_name')
+    ->limit(20)
+    ->get();
+
+    return response()->json($personnel);
 }
+
+public function retirementInformation($id)
+{
+    $person = Personnel::with([
+        'currentPromotion.rank'
+    ])->findOrFail($id);
+
+    if (!$person->currentPromotion) {
+
+        return response()->json([
+            'message' => 'Current rank not found.'
+        ],404);
+
+    }
+
+    $rule = RetirementRule::where(
+        'rank_id',
+        $person->currentPromotion->rank_id
+    )->first();
+
+    if (!$rule) {
+
+        return response()->json([
+            'message' => 'Retirement rule not found.'
+        ],404);
+
+    }
+
+    $dob = Carbon::parse(
+        $person->date_of_birth
+    );
+
+    $currentAge = $dob->age;
+
+    $retirementAge =
+        $rule->retirement_age +
+        ($person->retirement_extension_years ?? 0);
+
+    $retirementDate = $dob
+        ->copy()
+        ->addYears($retirementAge);
+
+    $today = Carbon::today();
+
+    $status = 'Serving';
+
+    if ($today->greaterThanOrEqualTo($retirementDate)) {
+
+        $status = 'Retired';
+
+    } else {
+
+        $yearsLeft = $today->diffInYears($retirementDate);
+
+        if ($yearsLeft <= 2) {
+
+            $status = 'Due Soon';
+
+        }
+
+    }
+
+    $remaining = $today->diff($retirementDate);
+
+    return response()->json([
+
+        'current_age' => $currentAge,
+
+        'rank' => $person->currentPromotion->rank->name,
+
+        'retirement_age' => $retirementAge,
+
+        'extension_years' =>
+            $person->retirement_extension_years ?? 0,
+
+        'retirement_date' =>
+            $retirementDate->format('d M Y'),
+
+        'years_left' =>
+            $today->greaterThanOrEqualTo($retirementDate)
+                ? 0
+                : $remaining->y,
+
+        'months_left' =>
+            $today->greaterThanOrEqualTo($retirementDate)
+                ? 0
+                : $remaining->m,
+
+        'days_left' =>
+            $today->greaterThanOrEqualTo($retirementDate)
+                ? 0
+                : $remaining->d,
+
+        'status' => $status
+
+    ]);
 }
+
+
+}
+

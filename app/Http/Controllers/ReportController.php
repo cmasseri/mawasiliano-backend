@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log; 
 use Illuminate\Http\Request;
 use App\Models\Personnel;
@@ -312,5 +313,167 @@ public function genderDistribution(Request $request)
 }
 
 
+public function educationFields(Request $request)
+{
+    $qualification = $request->qualification;
+    $keyword = $request->keyword;
+
+    $query =DB::table('personnel_education')
+        ->select('field_of_study')
+        ->whereNotNull('field_of_study');
+
+    if ($qualification) {
+
+        $query->where(
+            'qualification',
+            $qualification
+        );
+
+    }
+
+    if ($keyword) {
+
+        $query->where(
+            'field_of_study',
+            'like',
+            "%{$keyword}%"
+        );
+
+    }
+
+return response()->json(
+
+    $query
+        ->distinct()
+        ->orderBy('field_of_study')
+        ->limit(20)
+        ->pluck('field_of_study')
+
+);
+}
+
+
+public function personnelByEducation(Request $request)
+{
+    $structureId   = $request->structure_id;
+    $qualification = $request->qualification;
+    $field         = $request->field_of_study;
+
+    $query = Personnel::query()
+
+        ->join(
+            'personnel_education',
+            'personnel.id',
+            '=',
+            'personnel_education.personnel_id'
+        )
+
+        ->leftJoin(
+            'units',
+            'personnel.unit_id',
+            '=',
+            'units.id'
+        )
+
+        ->leftJoin(
+            'promotions',
+            function($join){
+
+                $join->on(
+                    'personnel.id',
+                    '=',
+                    'promotions.personnel_id'
+                )
+                ->where(
+                    'promotions.is_current',
+                    true
+                );
+
+            }
+        )
+
+        ->leftJoin(
+            'ranks',
+            'promotions.rank_id',
+            '=',
+            'ranks.id'
+        );
+
+    // ==========================
+    // STRUCTURE FILTER
+    // ==========================
+
+    if($structureId){
+
+        $ids = $this->getAllChildren($structureId);
+
+        $ids[] = (int)$structureId;
+
+        $query->whereIn(
+            'personnel.unit_id',
+            $ids
+        );
+
+    }
+
+    // ==========================
+    // QUALIFICATION
+    // ==========================
+
+    if($qualification){
+
+ $query->where(
+    'personnel_education.qualification',
+    $qualification
+);
+
+    }
+
+    // ==========================
+    // FIELD
+    // ==========================
+
+    if($field){
+
+        $query->where(
+            'personnel_education.field_of_study',
+            'like',
+            "%{$field}%"
+        );
+
+    }
+
+    return response()->json(
+
+        $query
+
+        ->select(
+
+            'personnel.id as personnel_id',
+
+            'personnel.service_number',
+
+            'personnel.full_name',
+
+            'ranks.name as rank_name',
+
+            'personnel_education.qualification',
+
+            'personnel_education.field_of_study',
+
+            'personnel_education.institution',
+
+            'personnel_education.year_completion',
+
+            'units.name as unit_name'
+
+        )
+
+->orderBy('personnel.full_name')
+->paginate(
+    $request->per_page ?? 20
+)
+);
+}
 
 }

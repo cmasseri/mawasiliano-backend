@@ -333,7 +333,7 @@ Route::get(
 );
 
 
-});
+
 
 
 
@@ -342,10 +342,13 @@ Route::get(
     [PersonnelController::class,'retirementInformation']
 );
 
+Route::get(
+    '/reports/retirement', 
+    [ReportController::class,'retirementReport'
+]);
 
 
-
-
+});
 
 
 

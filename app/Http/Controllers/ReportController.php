@@ -6,6 +6,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
 use App\Models\Personnel;
 use App\Models\Unit;
+use Carbon\Carbon;
+use App\Models\RetirementRule;
+
 
 class ReportController extends Controller
 {
@@ -474,6 +477,112 @@ public function personnelByEducation(Request $request)
     $request->per_page ?? 20
 )
 );
+}
+
+
+public function retirementReport()
+{
+    $personnel = Personnel::with([
+        'currentPromotion.rank',
+        'currentAppointment.appointment.unit'
+    ])->get();
+
+    $data = $personnel->map(function ($p) {
+
+        if (!$p->currentPromotion) {
+            return null;
+        }
+
+        $rule = RetirementRule::where(
+            'rank_id',
+            $p->currentPromotion->rank_id
+        )->first();
+
+        if (!$rule) {
+            return null;
+        }
+
+        $dob = Carbon::parse($p->date_of_birth);
+
+        $currentAge = $dob->age;
+
+        $retirementAge =
+            $rule->retirement_age +
+            ($p->retirement_extension_years ?? 0);
+
+        $retirementDate = $dob
+            ->copy()
+            ->addYears($retirementAge);
+
+        $today = Carbon::today();
+
+        $status = 'Serving';
+
+        if ($today->greaterThanOrEqualTo($retirementDate)) {
+
+            $status = 'Retired';
+
+        } else {
+
+            $yearsLeft =
+                $today->diffInYears($retirementDate);
+
+            if ($yearsLeft <= 2) {
+
+                $status = 'Near Retirement';
+
+            }
+
+        }
+
+        return [
+
+            'id' => $p->id,
+
+            'service_number' => $p->service_number,
+
+            'full_name' => $p->full_name,
+
+            'rank' => optional(
+                $p->currentPromotion->rank
+            )->name,
+
+            'unit' => optional(
+                optional(
+                    $p->currentAppointment
+                )->appointment
+            )->unit->name ?? '',
+
+            'current_age' => $currentAge,
+
+            'retirement_age' => $retirementAge,
+
+            'retirement_date' =>
+                $retirementDate->format('Y-m-d'),
+
+            'years_left' =>
+                $today->greaterThanOrEqualTo($retirementDate)
+                    ? 0
+                    : $today->diff($retirementDate)->y,
+
+            'extension_years' =>
+                $p->retirement_extension_years ?? 0,
+
+            'status' => $status
+
+        ];
+
+    })
+->filter()
+
+->filter(function ($person) {
+
+    return $person['years_left'] <= 2;
+
+})
+
+->values();
+    return response()->json($data);
 }
 
 }

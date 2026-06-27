@@ -80,19 +80,52 @@ class PersonnelExtraController extends Controller
     // ==========================================
 
     public function operations($id)
-    {
-        return DB::table('personnel_operations')
+{
+    return DB::table('personnel_operations')
 
-            ->where(
-                'personnel_id',
-                $id
-            )
+        ->join(
+            'operations',
+            'personnel_operations.operation_id',
+            '=',
+            'operations.id'
+        )
 
-            ->orderByDesc('start_date')
+        ->leftJoin(
+            'units',
+            'personnel_operations.unit_id',
+            '=',
+            'units.id'
+        )
 
-            ->get();
-    }
+        ->select(
 
+            'personnel_operations.*',
+
+            'operations.name as operation_name',
+
+            'operations.type as operation_type',
+
+            'operations.country',
+
+            'operations.location',
+
+            'operations.status as operation_status',
+
+            'units.name as unit_name'
+
+        )
+
+        ->where(
+            'personnel_operations.personnel_id',
+            $id
+        )
+
+        ->orderByDesc(
+            'personnel_operations.start_date'
+        )
+
+        ->get();
+}
     // ==========================================
     // TRAININGS
     // ==========================================

@@ -10,6 +10,7 @@ use App\Models\PersonnelEducation;
 use App\Models\PersonnelAppointment;
 use App\Models\Training;
 use App\Models\PersonnelTraining;
+use App\Models\RetirementExtension;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
@@ -38,7 +39,8 @@ class PersonnelController extends Controller
 
             'trainings.training'
 
-        ]);
+        ])
+        ->where('status', 'ACTIVE');
 
         if ($request->filled('unit_id')) {
 
@@ -130,6 +132,7 @@ class PersonnelController extends Controller
                 'personnel.unit_id',
                 $unitId
             )
+            ->where('personnel.status', 'ACTIVE')
 
             // Officers first
             ->orderByRaw("
@@ -448,7 +451,7 @@ $validated = $request->validate([
 
             'unit_id'            => $validated['unit_id'],
 
-            'status'             => $request->status ?? 'ACTIVE'
+          'status' => $person->status
 
         ]);
 
@@ -780,6 +783,7 @@ public function searchPersonnel(Request $request)
         'full_name',
         'service_number'
     )
+    ->where('status', 'ACTIVE')
     ->where(function ($query) use ($term) {
 
         $query->where(
@@ -803,9 +807,10 @@ public function searchPersonnel(Request $request)
 
 public function retirementInformation($id)
 {
-    $person = Personnel::with([
-        'currentPromotion.rank'
-    ])->findOrFail($id);
+$person = Personnel::with([
+    'currentPromotion.rank',
+    'activeRetirementExtension'
+])->findOrFail($id);
 
     if (!$person->currentPromotion) {
 
@@ -834,9 +839,12 @@ public function retirementInformation($id)
 
     $currentAge = $dob->age;
 
-    $retirementAge =
-        $rule->retirement_age +
-        ($person->retirement_extension_years ?? 0);
+ $extensionYears =
+    $person->activeRetirementExtension?->years_extended ?? 0;
+
+$retirementAge =
+    $rule->retirement_age +
+    $extensionYears;
 
     $retirementDate = $dob
         ->copy()
@@ -844,23 +852,9 @@ public function retirementInformation($id)
 
     $today = Carbon::today();
 
-    $status = 'Serving';
+    $status = $person->status;
 
-    if ($today->greaterThanOrEqualTo($retirementDate)) {
 
-        $status = 'Retired';
-
-    } else {
-
-        $yearsLeft = $today->diffInYears($retirementDate);
-
-        if ($yearsLeft <= 2) {
-
-            $status = 'Due Soon';
-
-        }
-
-    }
 
     $remaining = $today->diff($retirementDate);
 
@@ -872,8 +866,8 @@ public function retirementInformation($id)
 
         'retirement_age' => $retirementAge,
 
-        'extension_years' =>
-            $person->retirement_extension_years ?? 0,
+       
+         'extension_years' => $extensionYears,
 
         'retirement_date' =>
             $retirementDate->format('d M Y'),
@@ -898,6 +892,88 @@ public function retirementInformation($id)
     ]);
 }
 
+public function updateStatus(Request $request, $id)
+{
+    $request->validate([
 
+        'status' =>
+        'required|in:RELEASED,TRANSFERRED_OUT,DECEASED'
+
+    ]);
+
+    $personnel = Personnel::findOrFail($id);
+
+    $personnel->status = $request->status;
+
+    $personnel->save();
+
+    return response()->json([
+
+        'message' =>
+        'Personnel status updated successfully.'
+
+    ]);
+}
+
+
+public function grantRetirementExtension(Request $request)
+{
+    $request->validate([
+
+        'personnel_id'     => 'required|exists:personnel,id',
+
+        'years_extended'   => 'required|integer|min:1|max:5',
+
+        'approval_date'    => 'required|date',
+
+        'approved_by'      => 'required|string|max:255',
+
+        'reference_number' => 'nullable|string|max:255',
+
+        'reason'           => 'nullable|string',
+
+        'remarks'          => 'nullable|string'
+
+    ]);
+
+    DB::transaction(function () use ($request) {
+
+        RetirementExtension::where(
+            'personnel_id',
+            $request->personnel_id
+        )->update([
+            'is_active' => false
+        ]);
+
+        RetirementExtension::create([
+
+            'personnel_id'     => $request->personnel_id,
+
+            'years_extended'   => $request->years_extended,
+
+            'approval_date'    => $request->approval_date,
+
+            'approved_by'      => $request->approved_by,
+
+            'reference_number' => $request->reference_number,
+
+            'reason'           => $request->reason,
+
+            'remarks'          => $request->remarks,
+
+            'is_active'        => true
+
+        ]);
+
+    });
+
+    return response()->json([
+
+        'success' => true,
+
+        'message' => 'Retirement extension granted successfully.'
+
+    ]);
+}
 }
 

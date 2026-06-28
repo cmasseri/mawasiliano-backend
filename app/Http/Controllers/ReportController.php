@@ -16,7 +16,7 @@ class ReportController extends Controller
     {
         $unitId = $request->unit_id;
 
-        $query = Personnel::query();
+       $query = Personnel::where('status', 'ACTIVE');
 
         // Filter selected structure + all descendants
         if ($unitId) {
@@ -98,9 +98,9 @@ class ReportController extends Controller
 
 public function dashboard()
 {
-    $totalPersonnel = Personnel::count();
+    $totalPersonnel = Personnel::where('status','ACTIVE')->count();
 
-    $activePersonnel = Personnel::where('status', 'ACTIVE')->count();
+$activePersonnel = $totalPersonnel;
 
     $totalUnits = Unit::count();
 
@@ -137,7 +137,7 @@ public function tradeDistribution(Request $request)
             ->orderBy('name')
             ->get();
 
-        // Kama hakuna watoto tumrudishe structure yenyewe
+       
         if ($children->count() == 0) {
 
             $units = Unit::where('id', $parentId)->get();
@@ -155,11 +155,14 @@ public function tradeDistribution(Request $request)
 
         $unitIds[] = $unit->id;
 
-        $query = Personnel::query()
-            ->whereIn(
-                'personnel.unit_id',
-                $unitIds
-            );
+$query = Personnel::query()
+
+    ->where('personnel.status', 'ACTIVE')
+
+    ->whereIn(
+        'personnel.unit_id',
+        $unitIds
+    );
 
         // Trade filter
         if ($tradeId) {
@@ -218,6 +221,7 @@ public function appointmentDistribution(Request $request)
     }
 
     $report = Personnel::query()
+      ->where('personnel.status', 'ACTIVE')
 
         ->join(
             'personnel_appointments',
@@ -268,7 +272,7 @@ public function genderDistribution(Request $request)
 {
     $unitId = $request->unit_id;
 
-    $query = Personnel::query();
+   $query = Personnel::where('status', 'ACTIVE');
 
     // Filter selected structure + descendants
     if ($unitId) {
@@ -363,6 +367,10 @@ public function personnelByEducation(Request $request)
     $field         = $request->field_of_study;
 
     $query = Personnel::query()
+    ->where(
+        'personnel.status',
+        'ACTIVE'
+    )
 
         ->join(
             'personnel_education',
@@ -478,27 +486,36 @@ public function personnelByEducation(Request $request)
 )
 );
 }
-
-
 public function retirementReport()
 {
-    $personnel = Personnel::with([
-        'currentPromotion.rank',
-        'currentAppointment.appointment.unit'
-    ])->get();
+    $today = Carbon::today();
 
-    $data = $personnel->map(function ($p) {
+    $rules = RetirementRule::all()->keyBy('rank_id');
 
-        if (!$p->currentPromotion) {
+    $personnel = Personnel::where('status', 'ACTIVE')
+
+        ->whereHas('currentPromotion')
+
+        ->with([
+            'currentPromotion.rank',
+            'currentAppointment.appointment.unit',
+            'activeRetirementExtension'
+        ])
+
+        ->get();
+
+    $data = $personnel->map(function ($p) use ($today, $rules) {
+
+        if (
+            !$p->currentPromotion ||
+            !$p->currentPromotion->rank_id
+        ) {
             return null;
         }
 
-        $rule = RetirementRule::where(
-            'rank_id',
-            $p->currentPromotion->rank_id
-        )->first();
+        $rule = $rules[$p->currentPromotion->rank_id] ?? null;
 
-        if (!$rule) {
+        if (!$rule || !$p->date_of_birth) {
             return null;
         }
 
@@ -506,32 +523,49 @@ public function retirementReport()
 
         $currentAge = $dob->age;
 
+        // ============================
+        // Retirement Extension
+        // ============================
+
+        $extensionYears =
+            $p->activeRetirementExtension?->years_extended ?? 0;
+
         $retirementAge =
             $rule->retirement_age +
-            ($p->retirement_extension_years ?? 0);
+            $extensionYears;
 
         $retirementDate = $dob
             ->copy()
             ->addYears($retirementAge);
 
-        $today = Carbon::today();
+        $daysLeft = $today->diffInDays(
+            $retirementDate,
+            false
+        );
 
-        $status = 'Serving';
+        // ============================
+        // Report Status
+        // ============================
 
-        if ($today->greaterThanOrEqualTo($retirementDate)) {
+        if ($daysLeft < 0) {
 
-            $status = 'Retired';
+            $status = 'OVERDUE';
+
+        } elseif ($daysLeft == 0) {
+
+            $status = 'DUE TODAY';
+
+        } elseif ($daysLeft <= 365) {
+
+            $status = 'THIS YEAR';
+
+        } elseif ($extensionYears > 0) {
+
+            $status = 'EXTENSION';
 
         } else {
 
-            $yearsLeft =
-                $today->diffInYears($retirementDate);
-
-            if ($yearsLeft <= 2) {
-
-                $status = 'Near Retirement';
-
-            }
+            $status = 'ACTIVE';
 
         }
 
@@ -539,50 +573,60 @@ public function retirementReport()
 
             'id' => $p->id,
 
-            'service_number' => $p->service_number,
+            'service_number' =>
+                $p->service_number,
 
-            'full_name' => $p->full_name,
+            'full_name' =>
+                $p->full_name,
 
-            'rank' => optional(
-                $p->currentPromotion->rank
-            )->name,
-
-            'unit' => optional(
+            'rank' =>
                 optional(
-                    $p->currentAppointment
-                )->appointment
-            )->unit->name ?? '',
+                    $p->currentPromotion->rank
+                )->name,
 
-            'current_age' => $currentAge,
+            'unit' =>
+                optional(
+                    optional(
+                        $p->currentAppointment
+                    )->appointment
+                )->unit->name ?? '',
 
-            'retirement_age' => $retirementAge,
+            'current_age' =>
+                $currentAge,
+
+            'retirement_age' =>
+                $retirementAge,
 
             'retirement_date' =>
                 $retirementDate->format('Y-m-d'),
 
-            'years_left' =>
-                $today->greaterThanOrEqualTo($retirementDate)
-                    ? 0
-                    : $today->diff($retirementDate)->y,
+            'days_left' =>
+                $daysLeft,
 
             'extension_years' =>
-                $p->retirement_extension_years ?? 0,
+                $extensionYears,
 
-            'status' => $status
+            'status' =>
+                $status
 
         ];
 
     })
-->filter()
 
-->filter(function ($person) {
+    ->filter()
 
-    return $person['years_left'] <= 2;
+    ->filter(function ($person) {
 
-})
+        return
+            $person['days_left'] <= (365 * 2) ||
+            $person['status'] == 'OVERDUE';
 
-->values();
+    })
+
+    ->sortBy('days_left')
+
+    ->values();
+
     return response()->json($data);
 }
-
 }

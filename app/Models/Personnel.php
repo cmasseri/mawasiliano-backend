@@ -34,10 +34,12 @@ class Personnel extends Model
     }
 
     // 🔥 PROMOTIONS (RANK HISTORY)
-    public function promotions()
-    {
-        return $this->hasMany(Promotion::class);
-    }
+  public function promotions()
+{
+    return $this->hasMany(Promotion::class)
+                ->with('rank')
+                ->orderByDesc('date_promoted');
+}
 
     public function currentPromotion()
     {
@@ -85,6 +87,7 @@ public function retirementExtensions()
 {
     return $this->hasMany(RetirementExtension::class);
 }
+
 
 public function activeRetirementExtension()
 {

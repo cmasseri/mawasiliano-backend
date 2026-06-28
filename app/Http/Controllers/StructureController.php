@@ -116,11 +116,10 @@ public function getNextLevel($id)
             )
         ) {
 
-            $item->personnel_count =
-                Personnel::where(
-                    'unit_id',
-                    $item->id
-                )->count();
+$item->personnel_count =
+    Personnel::where('unit_id', $item->id)
+        ->where('status', 'ACTIVE')
+        ->count();
         }
 
         // COMMAND, BRIGADE, REGION etc

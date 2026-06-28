@@ -7,22 +7,31 @@ use Illuminate\Database\Eloquent\Model;
 class RetirementExtension extends Model
 {
     protected $fillable = [
+
         'personnel_id',
+
+        'years_extended',
+
         'approval_date',
-        'effective_from',
-        'effective_to',
-        'extension_years',
-        'approval_reference',
+
+        'approved_by',
+
+        'reference_number',
+
         'reason',
+
         'remarks',
+
         'is_active'
+
     ];
 
     protected $casts = [
-        'approval_date'  => 'date',
-        'effective_from' => 'date',
-        'effective_to'   => 'date',
-        'is_active'      => 'boolean'
+
+        'approval_date' => 'date',
+
+        'is_active' => 'boolean'
+
     ];
 
     public function personnel()

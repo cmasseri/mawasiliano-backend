@@ -24,7 +24,7 @@ class Promotion extends Model
         return $this->belongsTo(Personnel::class);
     }
 
-    // 🔥 HII NDIO ILIKUWA PROBLEM
+ 
     public function rank()
     {
         return $this->belongsTo(Rank::class, 'rank_id');

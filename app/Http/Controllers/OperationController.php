@@ -24,7 +24,7 @@ class OperationController extends Controller
             'location' => 'nullable|string|max:191',
             'country' => 'nullable|string|max:191',
             'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
             'description' => 'nullable|string',
         ]);
 
@@ -62,7 +62,7 @@ class OperationController extends Controller
             'location' => 'nullable|string|max:191',
             'country' => 'nullable|string|max:191',
             'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
             'description' => 'nullable|string',
         ]);
 
@@ -83,21 +83,41 @@ class OperationController extends Controller
         return response()->json($operation);
     }
 
-    public function destroy($id)
-    {
-        $operation = Operation::findOrFail($id);
+public function destroy($id)
+{
+    $operation = Operation::findOrFail($id);
 
-        Log::warning('OPERATION DELETED', [
-            'operation_id' => $operation->id,
-            'name' => $operation->name
-        ]);
+    $hasPersonnel = DB::table('personnel_operations')
+        ->where('operation_id', $id)
+        ->exists();
 
-        $operation->delete();
+    if ($hasPersonnel) {
 
         return response()->json([
-            'message' => 'Operation deleted successfully'
-        ]);
+
+            'message' =>
+                'Cannot delete operation because personnel are assigned.'
+
+        ], 422);
+
     }
+
+    Log::warning('OPERATION DELETED', [
+
+        'operation_id' => $operation->id,
+
+        'name' => $operation->name
+
+    ]);
+
+    $operation->delete();
+
+    return response()->json([
+
+        'message' => 'Operation deleted successfully'
+
+    ]);
+}
 
     private function calculateStatus($startDate, $endDate): string
     {
@@ -138,7 +158,7 @@ public function personnelOps($id)
 
         ->where('personnel.unit_id', $id)
 
-        // asiwe kwenye operation yoyote ONGOING
+        ->where('personnel.status', 'ACTIVE')
         ->whereNotExists(function ($query) {
             $query->select(DB::raw(1))
                 ->from('personnel_operations')
@@ -195,6 +215,22 @@ public function assignPersonnel(Request $request)
             ->where('id', $request->operation_id)
             ->first();
 
+
+if ($operation->status === 'COMPLETED') {
+
+    return response()->json([
+
+        'success' => false,
+
+        'message' => 'Cannot assign personnel to a completed operation.'
+
+    ], 422);
+
+}
+
+DB::transaction(function () use ($request, $operation) {
+
+
         foreach ($request->personnel as $item) {
 
             $personnelId = $item['personnel_id'];
@@ -249,7 +285,11 @@ public function assignPersonnel(Request $request)
                 'role' => $role
 
             ]);
+
+
         }
+});
+
 
         Log::info('ASSIGNMENT COMPLETED');
 
@@ -260,6 +300,10 @@ public function assignPersonnel(Request $request)
             'message' => 'Personnel assigned successfully'
 
         ]);
+
+   
+
+
 
     } catch (\Exception $e) {
 
@@ -282,6 +326,9 @@ public function assignPersonnel(Request $request)
         ], 500);
     }
 }
+
+
+
 public function operationPersonnel($id)
 {
     $personnel = DB::table('personnel_operations')
@@ -317,6 +364,7 @@ public function operationPersonnel($id)
             '=',
             'ranks.id'
         )
+        ->where('personnel.status', 'ACTIVE')
 
         ->where(
             'personnel_operations.operation_id',
@@ -349,4 +397,6 @@ public function operationPersonnel($id)
 
     return response()->json($personnel);
 }
+
+
 }

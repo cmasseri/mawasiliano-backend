@@ -347,6 +347,34 @@ Route::get(
     [ReportController::class,'retirementReport'
 ]);
 
+Route::patch(
+
+    '/personnel/{id}/status',
+
+    [PersonnelController::class,'updateStatus']
+
+);
+
+Route::get(
+    '/personnel/{id}/promotions',
+    [PersonnelExtraController::class, 'promotions']
+);
+
+Route::post(
+    '/promotions',
+    [PersonnelExtraController::class, 'storePromotion']
+);
+
+Route::get(
+    '/personnel/{id}/next-rank',
+    [PersonnelExtraController::class, 'nextRank']
+);
+
+Route::post(
+    '/retirement-extensions',
+    [PersonnelController::class, 'grantRetirementExtension']
+);
+
 
 });
 

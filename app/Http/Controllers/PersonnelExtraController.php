@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\Personnel;
+use App\Models\Rank;
+use App\Models\Promotion;
 use Illuminate\Support\Facades\DB;
 
 class PersonnelExtraController extends Controller
@@ -717,5 +720,81 @@ class PersonnelExtraController extends Controller
 
         }
     }
+
+public function promotions($id)
+{
+    $promotions = Promotion::with('rank')
+
+        ->where('personnel_id', $id)
+
+        ->orderByDesc('date_promoted')
+
+        ->get();
+
+    return response()->json($promotions);
+}
+
+
+public function storePromotion(Request $request)
+{
+    $data = $request->validate([
+
+        'personnel_id'  => 'required|exists:personnel,id',
+
+        'rank_id'       => 'required|exists:ranks,id',
+
+        'date_promoted' => 'required|date'
+
+    ]);
+
+    DB::transaction(function () use ($data) {
+
+        // Ondoa current rank ya zamani
+        Promotion::where('personnel_id', $data['personnel_id'])
+            ->where('is_current', true)
+            ->update([
+                'is_current' => false
+            ]);
+
+        // Weka rank mpya kuwa current
+        Promotion::create([
+
+            'personnel_id' => $data['personnel_id'],
+
+            'rank_id' => $data['rank_id'],
+
+            'date_promoted' => $data['date_promoted'],
+
+            'is_current' => true
+
+        ]);
+
+    });
+
+    return response()->json([
+        'message' => 'Personnel promoted successfully.'
+    ], 201);
+}
+
+
+public function nextRank($id)
+{
+    $personnel = Personnel::with('currentPromotion.rank')
+        ->findOrFail($id);
+
+    if (!$personnel->currentPromotion || !$personnel->currentPromotion->rank) {
+
+        return response()->json(null);
+
+    }
+
+    $currentRank = $personnel->currentPromotion->rank;
+
+    $nextRank = Rank::where('category', $currentRank->category)
+        ->where('level', $currentRank->level + 1)
+        ->first();
+
+    return response()->json($nextRank);
+}
 
 }

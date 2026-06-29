@@ -335,8 +335,6 @@ Route::get(
 
 
 
-
-
 Route::get(
     '/personnel/{id}/retirement',
     [PersonnelController::class,'retirementInformation']

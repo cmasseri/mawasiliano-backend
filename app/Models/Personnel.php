@@ -41,23 +41,24 @@ class Personnel extends Model
                 ->orderByDesc('date_promoted');
 }
 
-    public function currentPromotion()
-    {
-        return $this->hasOne(Promotion::class)
-            ->where('is_current', true);
-    }
+ public function currentPromotion()
+{
+    return $this->hasOne(Promotion::class)
+        ->where('is_current', true)
+        ->with('rank');
+}
 
     // 🔥 TRADES
     public function trades()
     {
         return $this->hasMany(PersonnelTrade::class);
     }
-
-    public function currentTrade()
-    {
-        return $this->hasOne(PersonnelTrade::class)
-            ->where('is_current', true);
-    }
+public function currentTrade()
+{
+    return $this->hasOne(PersonnelTrade::class)
+        ->where('is_current', true)
+        ->with('trade');
+}
 
     // 🔥 APPOINTMENTS
     public function appointments()

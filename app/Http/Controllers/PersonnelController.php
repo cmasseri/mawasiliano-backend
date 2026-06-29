@@ -932,24 +932,59 @@ public function grantRetirementExtension(Request $request)
 
         'reason'           => 'nullable|string',
 
-        'remarks'          => 'nullable|string'
+        'remarks'          => 'nullable|string',
+
+        'force'            => 'nullable|boolean'
 
     ]);
 
-    DB::transaction(function () use ($request) {
+   
+    $activeExtension = RetirementExtension::where(
+        'personnel_id',
+        $request->personnel_id
+    )
+    ->where('is_active', true)
+    ->first();
 
-        RetirementExtension::where(
-            'personnel_id',
-            $request->personnel_id
-        )->update([
-            'is_active' => false
-        ]);
+    if ($activeExtension && !$request->boolean('force')) {
+
+return response()->json([
+
+    'success' => false,
+
+    'requires_confirmation' => true,
+
+    'current_extension' => $activeExtension->years_extended,
+
+    'new_extension' => $request->years_extended,
+
+    'total_extension' =>
+        $activeExtension->years_extended +
+        $request->years_extended
+
+], 200);
+
+    }
+
+    DB::transaction(function () use ($request, $activeExtension) {
+
+        $totalYears = $request->years_extended;
+
+        if ($activeExtension) {
+
+            $totalYears += $activeExtension->years_extended;
+
+            $activeExtension->update([
+                'is_active' => false
+            ]);
+
+        }
 
         RetirementExtension::create([
 
             'personnel_id'     => $request->personnel_id,
 
-            'years_extended'   => $request->years_extended,
+            'years_extended'   => $totalYears,
 
             'approval_date'    => $request->approval_date,
 

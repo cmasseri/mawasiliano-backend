@@ -29,4 +29,6 @@ class Promotion extends Model
     {
         return $this->belongsTo(Rank::class, 'rank_id');
     }
+
+    
 }

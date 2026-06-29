@@ -23,34 +23,33 @@ class UserController extends Controller
         ->get();
     }
 
-    public function store(Request $request)
-    {
+public function store(Request $request)
+{
+    $validated = $request->validate([
+        'username' => 'required|unique:users,username',
+        'password' => [
+            'required',
+            'min:8',
+            'regex:/[a-z]/',
+            'regex:/[A-Z]/',
+            'regex:/[0-9]/',
+            'regex:/[@$!%*?&]/'
+        ],
+        'role' => 'required|in:ADMINISTRATOR,OPERATOR'
+    ]);
 
-    $request->validate([
-    'username' => 'required|unique:users',
-    'password' => [
-        'required',
-        'min:8',
-        'regex:/[a-z]/',
-        'regex:/[A-Z]/',
-        'regex:/[0-9]/',
-        'regex:/[@$!%*?&]/'
-    ],
-    'role' => 'required'
-]);
+    $user = User::create([
+        'username' => $validated['username'],
+        'password' => Hash::make($validated['password']),
+        'role' => $validated['role'],
+        'is_active' => true
+    ]);
 
-        $user = User::create([
-            'username' => $validated['username'],
-            'password' => Hash::make($validated['password']),
-            'role' => $validated['role'],
-            'is_active' => true
-        ]);
-
-        return response()->json([
-            'message' => 'User created successfully',
-            'data' => $user
-        ], 201);
-    }
+    return response()->json([
+        'message' => 'User created successfully',
+        'data' => $user
+    ], 201);
+}
 
 public function update(Request $request, User $user)
 {

@@ -372,7 +372,10 @@ Route::post(
     '/retirement-extensions',
     [PersonnelController::class, 'grantRetirementExtension']
 );
-
+Route::put(
+    '/operations/{operation}/personnel/{personnel}/remove',
+    [OperationController::class, 'removePersonnel']
+);
 
 });
 
